@@ -1,6 +1,6 @@
-#include "debug.hpp"
-#include "netutils.hpp"
-#include "utils.hpp"
+#include "debug.h"
+#include "netutils.h"
+#include "utils.h"
 #include <iostream>
 #include <thread>
 int main(int argc, char** argv)

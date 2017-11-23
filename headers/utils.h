@@ -1,9 +1,8 @@
-#include "debug.hpp"
+#include "debug.h"
 #include <cstring>
 #include <iostream>
 #include <vector>
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
 // C++ template to print vector container elements
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
@@ -23,4 +22,3 @@ void print_error_with_message(std::string);
 std::vector<std::string> split_string_to_vector(std::string, const std::string&);
 int find_string_index(std::vector<std::string>&, std::string&);
 }
-#endif

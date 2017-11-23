@@ -1,5 +1,5 @@
-#include "debug.hpp"
-#include "utils.hpp"
+#include "debug.h"
+#include "utils.h"
 #include <arpa/inet.h>
 #include <cstring>
 #include <iostream>
@@ -14,9 +14,8 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
-#ifndef NETUTILS_H
-#define NETUTILS_H
 
+#pragma once
 namespace NetUtils {
 
 enum netconstants {
@@ -66,4 +65,3 @@ class Request {
 std::ostream& operator<<(std::ostream&, const NetUtils::Request&);
 std::string resolve_host_name(std::string);
 }
-#endif
