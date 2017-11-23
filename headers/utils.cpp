@@ -31,7 +31,7 @@ std::vector<std::string> Utils::split_string_to_vector(std::string s, const std:
 int Utils::find_string_index(std::vector<std::string>& strings, std::string& s)
 {
   int ans = -1;
-  for (int i = 0; i < strings.size() && ans < 0; i++) {
+  for (size_t i = 0; i < strings.size() && ans < 0; i++) {
     ans = (strings[i].find(s) != std::string::npos) ? i : ans;
   }
 

@@ -2,7 +2,7 @@
 #include "netutils.hpp"
 #include "utils.hpp"
 #include <iostream>
-
+#include <thread>
 int main(int argc, char** argv)
 {
   u_short listen_fd, port, conn_fd, timeout;
@@ -22,9 +22,8 @@ int main(int argc, char** argv)
       Utils::print_error_with_message("Error Accepting Connection");
     }
     debug("Accepted Connection");
-    NetUtils::Request rq = NetUtils::Request(conn_fd);
-    rq.readRequestFromSocket();
-    debugs("Request Received", rq);
+    std::thread t(&NetUtils::spawn_request_handler, conn_fd);
+    t.detach();
   }
   return 0;
 }

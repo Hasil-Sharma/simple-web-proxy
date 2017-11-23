@@ -1,17 +1,24 @@
 #include "debug.hpp"
 #include "utils.hpp"
+#include <arpa/inet.h>
 #include <cstring>
 #include <iostream>
+#include <mutex>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sstream>
+#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <thread>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 #ifndef NETUTILS_H
 #define NETUTILS_H
 
 namespace NetUtils {
+
 enum netconstants {
   MAX_CONNECTION = 10,
   DEFAULT_PORT = 80,
@@ -19,8 +26,9 @@ enum netconstants {
 };
 
 u_short create_socket(u_short);
-
+void spawn_request_handler(u_short);
 class Request {
+
   private:
   void setMethodUrlHttp(std::string);
   void setHostAndPort(std::string);
@@ -30,6 +38,9 @@ class Request {
   std::string methodProperty = "GET";
 
   public:
+  static const int CONNECTION_CLOSED = 0;
+  static const int ERROR = 1;
+  static const int REQUEST_SERVED = 2;
   std::string method;
   u_short port;
   u_short socket;
@@ -37,6 +48,7 @@ class Request {
   std::string host;
   std::string payload;
   std::string http;
+  std::string hostIp;
   Request(u_short socket)
   {
     this->socket = socket;
@@ -48,9 +60,10 @@ class Request {
     debug("Calling close on socket");
     close(this->socket);
   }
-  void readRequestFromSocket();
+  int readRequestFromSocket();
 };
 
 std::ostream& operator<<(std::ostream&, const NetUtils::Request&);
+std::string resolve_host_name(std::string);
 }
 #endif
