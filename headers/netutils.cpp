@@ -71,7 +71,46 @@ void NetUtils::spawn_request_handler(u_short socket)
     if (status == NetUtils::RequestResponseHandler::CONNECTION_CLOSED) {
       debug("Connection Closed");
       break;
+    } else if (status == RequestResponseHandler::ERROR) {
+      break;
     }
+
     debugs("Request Received", rq);
+    status = rq.readResponseFromRemote();
+    if (status == RequestResponseHandler::ERROR) {
+      // TODO Handle;
+      break;
+    }
+    status = rq.sendResponseToSocket();
+    if (status == RequestResponseHandler::ERROR) {
+      break;
+      // TODO Handle better
+    }
   }
+}
+
+u_short NetUtils::create_remote_socket(std::string remote_ip, u_short port)
+{
+  u_short sockfd;
+  struct sockaddr_in remote_addr;
+
+  if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    Utils::print_error_with_message("Unable create remote socket");
+    return ERROR;
+  }
+
+  memset(&remote_addr, 0, sizeof(struct sockaddr_in));
+  remote_addr.sin_family = AF_INET;
+  remote_addr.sin_port = htons(port);
+
+  if (inet_pton(AF_INET, remote_ip.c_str(), &remote_addr.sin_addr) <= 0) {
+    Utils::print_error_with_message("Invalid remote address");
+    return ERROR;
+  }
+
+  if (connect(sockfd, (struct sockaddr*)&remote_addr, sizeof(struct sockaddr_in)) < 0) {
+    Utils::print_error_with_message("Unable to Connect to Remote Server");
+    return ERROR;
+  }
+  return sockfd;
 }

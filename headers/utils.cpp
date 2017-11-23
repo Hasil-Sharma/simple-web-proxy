@@ -28,7 +28,7 @@ std::vector<std::string> Utils::split_string_to_vector(std::string s, const std:
   return ans;
 }
 
-int Utils::find_string_index(std::vector<std::string>& strings, std::string& s)
+int Utils::find_string_index(std::vector<std::string>& strings, const std::string& s)
 {
   int ans = -1;
   for (size_t i = 0; i < strings.size() && ans < 0; i++) {

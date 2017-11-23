@@ -21,46 +21,46 @@ namespace NetUtils {
 enum netconstants {
   MAX_CONNECTION = 10,
   DEFAULT_PORT = 80,
-  DEFAULT_BUFFLEN = 512
+  DEFAULT_BUFFLEN = 512,
+  ERROR = -1
 };
 
 u_short create_socket(u_short);
 void spawn_request_handler(u_short);
+std::string resolve_host_name(std::string);
+u_short create_remote_socket(std::string, u_short);
 class RequestResponseHandler {
 
-  private:
+  const std::string endOfRequest = "\r\n\r\n";
+  const std::string delimReq = "\r\n";
+  const std::string hostProperty = "Host:";
+  const std::string methodProperty = "GET";
+
   void setMethodUrlHttp(std::string);
   void setHostAndPort(std::string);
-  std::string endOfRequest = "\r\n\r\n";
-  std::string delimReq = "\r\n";
-  std::string hostProperty = "Host:";
-  std::string methodProperty = "GET";
 
   public:
   static const int CONNECTION_CLOSED = 0;
   static const int ERROR = 1;
-  static const int REQUEST_SERVED = 2;
+  static const int SUCCESS = 2;
+
   std::string method;
   u_short port;
   u_short socket;
+  u_short remote_socket;
   std::string url;
   std::string host;
   std::string payload;
   std::string http;
   std::string hostIp;
-  RequestResponseHandler(u_short socket)
-  {
-    this->socket = socket;
-    this->port = NetUtils::DEFAULT_PORT;
-  }
-  ~RequestResponseHandler()
-  {
-    // Closing the socket
-    debug("Calling close on socket");
-    close(this->socket);
-  }
+  std::string request;
+  std::string response;
+  RequestResponseHandler(u_short socket);
+  ~RequestResponseHandler();
+
   int readRequestFromSocket();
+  int readResponseFromRemote();
+  int sendResponseToSocket();
 };
 std::ostream& operator<<(std::ostream&, const NetUtils::RequestResponseHandler&);
-std::string resolve_host_name(std::string);
 }
