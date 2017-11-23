@@ -26,7 +26,7 @@ enum netconstants {
 
 u_short create_socket(u_short);
 void spawn_request_handler(u_short);
-class Request {
+class RequestResponseHandler {
 
   private:
   void setMethodUrlHttp(std::string);
@@ -48,12 +48,12 @@ class Request {
   std::string payload;
   std::string http;
   std::string hostIp;
-  Request(u_short socket)
+  RequestResponseHandler(u_short socket)
   {
     this->socket = socket;
     this->port = NetUtils::DEFAULT_PORT;
   }
-  ~Request()
+  ~RequestResponseHandler()
   {
     // Closing the socket
     debug("Calling close on socket");
@@ -61,7 +61,6 @@ class Request {
   }
   int readRequestFromSocket();
 };
-
-std::ostream& operator<<(std::ostream&, const NetUtils::Request&);
+std::ostream& operator<<(std::ostream&, const NetUtils::RequestResponseHandler&);
 std::string resolve_host_name(std::string);
 }

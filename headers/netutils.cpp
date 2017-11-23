@@ -64,11 +64,11 @@ std::string NetUtils::resolve_host_name(std::string hostname)
 void NetUtils::spawn_request_handler(u_short socket)
 {
   int status;
-  NetUtils::Request rq = NetUtils::Request(socket);
+  NetUtils::RequestResponseHandler rq = NetUtils::RequestResponseHandler(socket);
   while (true) {
     debugs("Thread ID", std::this_thread::get_id());
     status = rq.readRequestFromSocket();
-    if (status == NetUtils::Request::CONNECTION_CLOSED) {
+    if (status == NetUtils::RequestResponseHandler::CONNECTION_CLOSED) {
       debug("Connection Closed");
       break;
     }

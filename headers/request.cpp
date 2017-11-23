@@ -1,6 +1,6 @@
 #include "netutils.h"
 
-int NetUtils::Request::readRequestFromSocket()
+int NetUtils::RequestResponseHandler::readRequestFromSocket()
 {
   // Assumption is withing DEFAULT_BUFFLEN entire request can be read
   std::string request;
@@ -45,7 +45,7 @@ int NetUtils::Request::readRequestFromSocket()
   return REQUEST_SERVED;
 }
 
-void NetUtils::Request::setHostAndPort(std::string line)
+void NetUtils::RequestResponseHandler::setHostAndPort(std::string line)
 {
   std::vector<std::string> tokens = Utils::split_string_to_vector(line, ":");
   // tokens[0] is the "Host"
@@ -56,7 +56,7 @@ void NetUtils::Request::setHostAndPort(std::string line)
   if (tokens.size() > 2)
     this->port = (u_short)strtoul(tokens[2].c_str(), NULL, 0);
 }
-void NetUtils::Request::setMethodUrlHttp(std::string line)
+void NetUtils::RequestResponseHandler::setMethodUrlHttp(std::string line)
 {
   std::string buff;
   std::stringstream ss(line);
@@ -69,7 +69,7 @@ void NetUtils::Request::setMethodUrlHttp(std::string line)
   this->http = x[2];
   // TODO : Handle error cases here
 }
-std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::Request& rq)
+std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::RequestResponseHandler& rq)
 {
   os << "\n\tMethod: " << rq.method;
   os << "\n\tURL: " << rq.url;
