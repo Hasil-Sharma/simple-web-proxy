@@ -3,8 +3,33 @@
 namespace NetUtils {
 std::mutex netUtilsMutex;
 std::unordered_map<std::string, std::string> dns_cache;
+std::set<std::string> blocked_ip;
+std::set<std::string> blocked_host;
+
+int MAX_CONNECTION = 10;
+int DEFAULT_PORT = 80;
+int DEFAULT_BUFFLEN = 512;
+int ERROR = -1;
+int SUCCESS = 1;
 };
 
+void NetUtils::fill_block_ip(std::string& file_path)
+{
+  std::ifstream infile(file_path);
+  std::string line;
+  struct sockaddr_in sa;
+  while (std::getline(infile, line)) {
+    // Check if line is IP or URI
+
+    if (inet_pton(AF_INET, line.c_str(), &(sa.sin_addr)) == 1) {
+      NetUtils::blocked_ip.insert(line);
+    } else {
+      NetUtils::blocked_host.insert(line);
+      std::string ip = NetUtils::resolve_host_name(line);
+      NetUtils::blocked_ip.insert(ip);
+    }
+  }
+}
 u_short NetUtils::create_socket(u_short port)
 {
   u_short sockfd;
@@ -55,6 +80,7 @@ std::string NetUtils::resolve_host_name(std::string hostname)
     } else {
       herror("Unable to resolve address");
       Utils::print_error_with_message("Unable to resolve address");
+      return ip;
     }
     NetUtils::dns_cache[hostname] = ip;
   }
@@ -72,6 +98,13 @@ void NetUtils::spawn_request_handler(u_short socket)
       debug("Connection Closed");
       break;
     } else if (status == RequestResponseHandler::ERROR) {
+      // TODO: handle
+      break;
+    } else if (status == RequestResponseHandler::HOST_BLOCKED || status == RequestResponseHandler::IP_BLOCKED || status == RequestResponseHandler::UNKNOWN_REQUEST || status == RequestResponseHandler::NO_HOST_RESOLVE) {
+
+      // TODO: Handle;
+      debug("Requested Remote is Blocked");
+      rq.handleError(status);
       break;
     }
 

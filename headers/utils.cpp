@@ -46,3 +46,11 @@ std::set<std::string> Utils::extract_hyperlinks(std::string& html)
     std::sregex_token_iterator{}
   };
 }
+std::string Utils::generate_dynamic_string(const char** string_templates, int num)
+{
+  std::string result(string_templates[0]);
+  for (int i = 1; i < num; i++) {
+    result = std::regex_replace(result, std::regex("%s"), string_templates[i]);
+  }
+  return result;
+}

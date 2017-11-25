@@ -3,6 +3,7 @@
 NetUtils::RequestResponseHandler::RequestResponseHandler(u_short socket)
 {
   this->socket = socket;
+  this->hostBlocked = false;
   this->port = NetUtils::DEFAULT_PORT;
 }
 
@@ -34,35 +35,44 @@ int NetUtils::RequestResponseHandler::readRequestFromSocket()
     //debugs("Read from socket", r_bytes);
     r_bytes += temp_bytes;
     request = recvbuff;
-    if (request.find(this->endOfRequest) != std::string::npos)
+    if (request.find(httprequest::request_end) != std::string::npos)
       break;
   }
 
   if (connection_closed == true) {
-    return CONNECTION_CLOSED;
+    return RequestResponseHandler::CONNECTION_CLOSED;
   }
   this->request = request;
   debugs("Request Received\n", request);
-  std::vector<std::string> rq_delim = Utils::split_string_to_vector(request, delimReq);
-  //debugs("Request Size", r_bytes);
-  //debugs("Request Vector", rq_delim);
+  std::vector<std::string> rq_delim = Utils::split_string_to_vector(request, httpconstant::fields::delim);
 
-  int host_idx = Utils::find_string_index(rq_delim, hostProperty);
+  int host_idx = Utils::find_string_index(rq_delim, httpconstant::fields::host);
   if (host_idx == -1) {
-    return ERROR;
+    return RequestResponseHandler::ERROR;
   } // TODO
   this->setHostAndPort(rq_delim[host_idx]);
-  int method_idx = Utils::find_string_index(rq_delim, methodProperty);
+  int method_idx = Utils::find_string_index(rq_delim, httprequest::type);
   if (method_idx == -1) {
-    return ERROR;
-  } // TODO
+    this->setMethodUrlHttp(rq_delim[0]);
+    return RequestResponseHandler::UNKNOWN_REQUEST;
+  }
   this->setMethodUrlHttp(rq_delim[method_idx]);
-  this->hostIp = NetUtils::resolve_host_name(this->host);
-
-  return SUCCESS;
+  if (NetUtils::blocked_host.find(this->host) == NetUtils::blocked_host.end())
+    this->hostIp = NetUtils::resolve_host_name(this->host);
+  else {
+    this->hostBlocked = true;
+    return RequestResponseHandler::HOST_BLOCKED;
+  }
+  if (this->hostIp.length() == 0)
+    return RequestResponseHandler::NO_HOST_RESOLVE;
+  if (NetUtils::blocked_ip.find(this->hostIp) != NetUtils::blocked_ip.end()) {
+    this->ipBlocked = true;
+    return RequestResponseHandler::IP_BLOCKED;
+  }
+  return RequestResponseHandler::SUCCESS;
 }
 
-int NetUtils::RequestResponseHandler ::readResponseFromRemote()
+int NetUtils::RequestResponseHandler::readResponseFromRemote()
 {
   u_short socket;
   ssize_t bytes_sent = 0, total_bytes = this->request.length();
@@ -108,7 +118,7 @@ int NetUtils::RequestResponseHandler::sendResponseToSocket()
     }
     r_bytes += t_bytes;
     header += cBuff;
-    if (header.find(RequestResponseHandler::endOfRequest) != std::string::npos) {
+    if (header.find(httprequest::request_end) != std::string::npos) {
       //debugs("Response Header Read Completely", header);
       break;
     }
@@ -175,16 +185,17 @@ void NetUtils::RequestResponseHandler::setMethodUrlHttp(std::string line)
   this->method = x[0];
   this->url = x[1];
   this->http = x[2];
+  debugs("HTTP", this->http);
   // TODO : Handle error cases here
 }
 
 int NetUtils::RequestResponseHandler::getContentLengthFromHeader(std::string& header)
 {
-  std::vector<std::string> tokens = Utils::split_string_to_vector(header, RequestResponseHandler::delimReq);
+  std::vector<std::string> tokens = Utils::split_string_to_vector(header, httpconstant ::fields ::delim);
   int length = NO_CONTENT_LENGTH;
   // Search for "Content-Length:" in the header
   for (std::string s : tokens) {
-    if (s.find(contentLengthProperty) != std::string::npos) {
+    if (s.find(httpconstant::fields::content_length) != std::string::npos) {
       // Content-Length found
       std::vector<std::string> subtokens = Utils::split_string_to_vector(s, ":");
       // subTokens[1] has the content length
@@ -197,6 +208,51 @@ int NetUtils::RequestResponseHandler::getContentLengthFromHeader(std::string& he
   return length;
 }
 
+bool NetUtils::RequestResponseHandler::handleError(int status)
+{
+  std::string body, response;
+  std::ostringstream header;
+  if (status == RequestResponseHandler::HOST_BLOCKED || status == RequestResponseHandler::IP_BLOCKED) {
+
+    const char* template_strings[] = {
+      httpresponse::templates::generic.c_str(),
+      httpresponse::templates::error_403.c_str(),
+      this->host.c_str()
+    };
+
+    body = Utils::generate_dynamic_string(template_strings, 3);
+    header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_error_403 : httpresponse::header::http_10_error_403);
+  } else if (status == RequestResponseHandler::UNKNOWN_REQUEST) {
+
+    const char* template_strings[] = {
+      httpresponse::templates::generic.c_str(),
+      httpresponse::templates::error_400.c_str(),
+      this->method.c_str()
+    };
+
+    body = Utils::generate_dynamic_string(template_strings, 3);
+    header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_error_400 : httpresponse::header::http_10_error_400);
+  } else if (status == RequestResponseHandler::NO_HOST_RESOLVE) {
+
+    const char* template_strings[] = {
+      httpresponse::templates::generic.c_str(),
+      httpresponse::templates::error_404.c_str(),
+      this->host.c_str()
+    };
+
+    body = Utils::generate_dynamic_string(template_strings, 3);
+    header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_error_404 : httpresponse::header::http_10_error_404);
+  }
+
+  header << httpconstant::fields::delim;
+  header << httpconstant::fields::content_length << ": " << body.length() << httpconstant::fields::delim;
+  header << httpconstant::fields::content_type << ": " << httpresponse::error_content_type << httpconstant::fields::delim;
+  header << httpconstant::fields::delim;
+  header << body;
+  response = header.str();
+  int response_status = NetUtils::send_to_socket(this->socket, (void*)response.c_str(), response.length(), "Unable to responsd error message");
+  return (response_status == NetUtils::SUCCESS) ? true : false;
+}
 std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::RequestResponseHandler& rq)
 {
   os << "\n\tMethod: " << rq.method;

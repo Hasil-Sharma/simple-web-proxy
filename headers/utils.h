@@ -24,4 +24,5 @@ void print_error_with_message(std::string);
 std::vector<std::string> split_string_to_vector(std::string, const std::string&);
 int find_string_index(std::vector<std::string>&, const std::string&);
 std::set<std::string> extract_hyperlinks(std::string&);
+std::string generate_dynamic_string(const char**, int);
 }
