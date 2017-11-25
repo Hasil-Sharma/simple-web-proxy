@@ -37,3 +37,12 @@ int Utils::find_string_index(std::vector<std::string>& strings, const std::strin
 
   return ans;
 }
+
+std::set<std::string> Utils::extract_hyperlinks(std::string& html)
+{
+  static const std::regex hl_regex("<a href=\"(.*?html)\">", std::regex_constants::icase);
+  return {
+    std::sregex_token_iterator(html.begin(), html.end(), hl_regex, 1),
+    std::sregex_token_iterator{}
+  };
+}

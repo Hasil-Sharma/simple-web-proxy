@@ -114,3 +114,29 @@ u_short NetUtils::create_remote_socket(std::string remote_ip, u_short port)
   }
   return sockfd;
 }
+
+int NetUtils::send_to_socket(u_short port, void* buffer, ssize_t buffer_length, std::string error_msg)
+{
+  ssize_t s_bytes = 0;
+  while (s_bytes != buffer_length) {
+    if ((s_bytes += send(port, (u_char*)buffer + s_bytes, buffer_length - s_bytes, 0)) < 0) {
+      Utils::print_error_with_message(error_msg);
+      return NetUtils::ERROR;
+    }
+  }
+
+  return NetUtils::SUCCESS;
+}
+
+int NetUtils::recv_from_socket(u_short port, void* buffer, ssize_t buffer_length, std::string error_msg)
+{
+  ssize_t r_bytes = 0;
+  while (r_bytes != buffer_length) {
+    if ((r_bytes += recv(port, (u_char*)buffer + r_bytes, buffer_length - r_bytes, 0)) < 0) {
+      Utils::print_error_with_message(error_msg);
+      return NetUtils::ERROR;
+    }
+  }
+
+  return NetUtils::SUCCESS;
+}

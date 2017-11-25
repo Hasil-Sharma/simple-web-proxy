@@ -14,7 +14,6 @@ NetUtils::RequestResponseHandler::~RequestResponseHandler()
 }
 
 int NetUtils::RequestResponseHandler::readRequestFromSocket()
-
 {
   // Assumption is withing DEFAULT_BUFFLEN entire request can be read
   std::string request;
@@ -89,44 +88,68 @@ int NetUtils::RequestResponseHandler ::readResponseFromRemote()
 
 int NetUtils::RequestResponseHandler::sendResponseToSocket()
 {
-  ssize_t r_bytes = 0, s_bytes, p_bytes;
+  ssize_t r_bytes, t_bytes, content_length;
   u_short remote_socket = this->remote_socket, client_socket = this->socket;
-  u_char buffer[NetUtils::DEFAULT_BUFFLEN];
-  struct timeval tv;
-  memset(&tv, 0, sizeof(struct timeval));
-  tv.tv_sec = 1;
-  // This size will be the content-length
-  bool client_connection_close = false, remote_connection_close = false;
+  u_char* buffer;
+  char cBuff;
+  std::string header;
+  // Reading header line by line
+  // TODO: Optimize this
 
-  setsockopt(remote_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(struct timeval));
-  while (!client_connection_close && !remote_connection_close) {
-
-    if ((r_bytes = recv(remote_socket, buffer, DEFAULT_BUFFLEN, 0)) < 0) {
+  r_bytes = 0;
+  while (true) {
+    if ((t_bytes = recv(remote_socket, &cBuff, 1, 0)) < 0) {
       Utils::print_error_with_message("Unable to receive from remote server");
       return RequestResponseHandler::ERROR;
     }
 
-    if (r_bytes == 0) {
-      remote_connection_close = true;
-      debug("Remote closed the connection, closing the remote socket");
-      close(remote_socket);
+    if (t_bytes == 0) {
+      return RequestResponseHandler::CONNECTION_CLOSED;
+    }
+    r_bytes += t_bytes;
+    header += cBuff;
+    if (header.find(RequestResponseHandler::endOfRequest) != std::string::npos) {
+      //debugs("Response Header Read Completely", header);
       break;
     }
-
-    s_bytes = 0;
-    while (s_bytes != r_bytes) {
-      if ((p_bytes = send(client_socket, buffer + s_bytes, r_bytes - s_bytes, 0)) < 0) {
-        Utils::print_error_with_message("Unable to send response to client");
-        return RequestResponseHandler::ERROR;
-      }
-
-      if (p_bytes == 0) {
-        client_connection_close = true;
-        break;
-      }
-      s_bytes += p_bytes;
-    }
   }
+
+  content_length = this->getContentLengthFromHeader(header);
+
+  if (content_length == NO_CONTENT_LENGTH) {
+    // TODO: Handle Error
+    return RequestResponseHandler::ERROR;
+  }
+
+  debug("Sending header to client");
+  if (NetUtils::send_to_socket(client_socket, (void*)header.c_str(), r_bytes, "Unable to send headers to client") == NetUtils::ERROR) {
+    // TODO: Handle Error
+    return RequestResponseHandler::ERROR;
+  }
+
+  buffer = (u_char*)malloc(content_length * sizeof(u_char));
+  memset(buffer, 0, content_length * sizeof(u_char));
+
+  debug("Receving content from remote");
+  if (NetUtils::recv_from_socket(remote_socket, (void*)buffer, content_length, "Unable to receive content from remote") == NetUtils::ERROR) {
+    // TODO: Handle Error
+    return RequestResponseHandler::ERROR;
+  }
+
+  debug("Sending content to client");
+  if (NetUtils::send_to_socket(client_socket, (void*)buffer, content_length, "Unable to send content to client") == NetUtils::ERROR) {
+    // TODO: Handle Error
+    return RequestResponseHandler::ERROR;
+  }
+
+  debug("Extracting hyperlink from content");
+  std::string string_buffer((char*)buffer);
+  std::set<std::string> hyperlinks = Utils::extract_hyperlinks(string_buffer);
+
+  for (std::string s : hyperlinks) {
+    debugs("Hyperlink Extracted", s);
+  }
+  free(buffer);
   return RequestResponseHandler::SUCCESS;
 }
 void NetUtils::RequestResponseHandler::setHostAndPort(std::string line)
@@ -153,6 +176,25 @@ void NetUtils::RequestResponseHandler::setMethodUrlHttp(std::string line)
   this->url = x[1];
   this->http = x[2];
   // TODO : Handle error cases here
+}
+
+int NetUtils::RequestResponseHandler::getContentLengthFromHeader(std::string& header)
+{
+  std::vector<std::string> tokens = Utils::split_string_to_vector(header, RequestResponseHandler::delimReq);
+  int length = NO_CONTENT_LENGTH;
+  // Search for "Content-Length:" in the header
+  for (std::string s : tokens) {
+    if (s.find(contentLengthProperty) != std::string::npos) {
+      // Content-Length found
+      std::vector<std::string> subtokens = Utils::split_string_to_vector(s, ":");
+      // subTokens[1] has the content length
+      std::stringstream ss(subtokens[1]);
+      ss >> length;
+      break;
+    }
+  }
+
+  return length;
 }
 
 std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::RequestResponseHandler& rq)
