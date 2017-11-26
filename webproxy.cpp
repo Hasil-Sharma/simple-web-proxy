@@ -3,6 +3,7 @@
 #include "utils.h"
 #include <iostream>
 #include <thread>
+int cache_timeout;
 int main(int argc, char** argv)
 {
   u_short listen_fd, port, conn_fd, timeout;
@@ -16,11 +17,10 @@ int main(int argc, char** argv)
   std::string file_path = "BLOCKED";
   NetUtils::fill_block_ip(file_path);
   debug("Reading done : blocked set");
-
   port = (u_short)strtoul(argv[1], NULL, 0);
   timeout = (u_short)strtoul(argv[2], NULL, 0);
   listen_fd = NetUtils::create_socket(port);
-
+  Utils::set_cache_timeout(timeout);
   while (true) {
     debug("Waiting to accept connection");
     if ((conn_fd = accept(listen_fd, (struct sockaddr*)&remote_addr, &addr_size)) < 0) {

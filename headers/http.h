@@ -5,6 +5,7 @@ namespace fields {
   const std::string content_length = "Content-Length";
   const std::string content_type = "Content-Type";
   const std::string connection = "Connection";
+  const std::string cache = "Cache";
   const std::string host = "Host";
   const std::string delim = "\r\n";
 }
@@ -22,6 +23,7 @@ namespace header {
   const std::string error_404 = "404 Not Found";
   const std::string error_403 = "403 Forbidden";
   const std::string error_400 = "400 Bad Request";
+  const std::string ok_200 = "200 OK";
 
   const std::string http_10_error_403 = httpconstant::http_10 + " " + error_403;
   const std::string http_11_error_403 = httpconstant::http_11 + " " + error_403;
@@ -31,8 +33,12 @@ namespace header {
 
   const std::string http_10_error_404 = httpconstant::http_10 + " " + error_404;
   const std::string http_11_error_404 = httpconstant::http_11 + " " + error_404;
+
+  const std::string http_10_ok_200 = httpconstant::http_10 + " " + ok_200;
+  const std::string http_11_ok_200 = httpconstant::http_11 + " " + ok_200;
 }
-const std::string error_content_type = "text/html";
+const std::string error_content_type = "text/html; charset=UTF-8";
+const std::string cache_content_type = "text/html; charset=UTF-8";
 }
 
 namespace httprequest {

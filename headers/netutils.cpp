@@ -87,20 +87,20 @@ std::string NetUtils::resolve_host_name(std::string hostname)
   return ip;
 }
 
-void NetUtils::spawn_request_handler(u_short socket)
+void NetUtils::spawn_request_handler(u_short client_socket)
 {
   int status;
-  NetUtils::RequestResponseHandler rq = NetUtils::RequestResponseHandler(socket);
+  NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
   while (true) {
     debugs("Thread ID", std::this_thread::get_id());
-    status = rq.readRequestFromSocket();
-    if (status == NetUtils::RequestResponseHandler::CONNECTION_CLOSED) {
+    status = rq.readRqFromClient();
+    if (status == NetUtils::RqRsHandler::CONNECTION_CLOSED) {
       debug("Connection Closed");
       break;
-    } else if (status == RequestResponseHandler::ERROR) {
+    } else if (status == RqRsHandler::ERROR) {
       // TODO: handle
       break;
-    } else if (status == RequestResponseHandler::HOST_BLOCKED || status == RequestResponseHandler::IP_BLOCKED || status == RequestResponseHandler::UNKNOWN_REQUEST || status == RequestResponseHandler::NO_HOST_RESOLVE) {
+    } else if (status == RqRsHandler::HOST_BLOCKED || status == RqRsHandler::IP_BLOCKED || status == RqRsHandler::UNKNOWN_REQUEST || status == RqRsHandler::NO_HOST_RESOLVE) {
 
       // TODO: Handle;
       debug("Requested Remote is Blocked");
@@ -109,15 +109,28 @@ void NetUtils::spawn_request_handler(u_short socket)
     }
 
     debugs("Request Received", rq);
-    status = rq.readResponseFromRemote();
-    if (status == RequestResponseHandler::ERROR) {
+    status = rq.sendRqToRemote();
+    if (status == RqRsHandler::ERROR) {
       // TODO Handle;
       break;
+    } else if (status == RqRsHandler::RETURN_CACHE) {
+      debug("Sending cached page to client");
+      status = rq.sendCacheToClient();
+      if (status == RqRsHandler::ERROR) {
+        break;
+        // TODO: Handle better
+      }
+      debug("Sent cached page to client");
+      continue;
     }
-    status = rq.sendResponseToSocket();
-    if (status == RequestResponseHandler::ERROR) {
+
+    status = rq.sendRsToClient();
+    if (status == RqRsHandler::ERROR) {
       break;
       // TODO Handle better
+    } else if (status == RqRsHandler::NO_CONTENT_LENGTH) {
+      debug("No Content-Length Supplied in response");
+      break;
     }
   }
 }

@@ -1,20 +1,33 @@
 #include "netutils.h"
 
-NetUtils::RequestResponseHandler::RequestResponseHandler(u_short socket)
+const int NetUtils::RqRsHandler::CONNECTION_CLOSED = 0;
+const int NetUtils::RqRsHandler::ERROR = 1;
+const int NetUtils::RqRsHandler::SUCCESS = 2;
+const int NetUtils::RqRsHandler::NO_CONTENT_LENGTH = -1;
+const int NetUtils::RqRsHandler::HOST_BLOCKED = 3;
+const int NetUtils::RqRsHandler::IP_BLOCKED = 4;
+const int NetUtils::RqRsHandler::UNKNOWN_REQUEST = 5;
+const int NetUtils::RqRsHandler::NO_HOST_RESOLVE = 6;
+const int NetUtils::RqRsHandler::RETURN_CACHE = 6;
+
+NetUtils::RqRsHandler::RqRsHandler(u_short client_socket)
 {
-  this->socket = socket;
-  this->hostBlocked = false;
+  this->client_socket = client_socket;
+  this->host_blocked = false;
   this->port = NetUtils::DEFAULT_PORT;
+  this->remote_socket = 0;
 }
 
-NetUtils::RequestResponseHandler::~RequestResponseHandler()
+NetUtils::RqRsHandler::~RqRsHandler()
 {
   // Closing the socket
   debug("Calling close on socket");
-  close(this->socket);
+  close(this->client_socket);
+  if (this->remote_socket)
+    close(this->remote_socket);
 }
 
-int NetUtils::RequestResponseHandler::readRequestFromSocket()
+int NetUtils::RqRsHandler::readRqFromClient()
 {
   // Assumption is withing DEFAULT_BUFFLEN entire request can be read
   std::string request;
@@ -24,7 +37,7 @@ int NetUtils::RequestResponseHandler::readRequestFromSocket()
   memset(recvbuff, 0, (DEFAULT_BUFFLEN + 1) * sizeof(char));
   while (r_bytes < DEFAULT_BUFFLEN && !connection_closed) {
 
-    if ((temp_bytes = recv(this->socket, recvbuff + r_bytes, DEFAULT_BUFFLEN - r_bytes, 0)) < 0) {
+    if ((temp_bytes = recv(this->client_socket, recvbuff + r_bytes, DEFAULT_BUFFLEN - r_bytes, 0)) < 0) {
       Utils::print_error_with_message("Unable to read request from socket");
     }
     // Handling the case of closing connection
@@ -40,7 +53,7 @@ int NetUtils::RequestResponseHandler::readRequestFromSocket()
   }
 
   if (connection_closed == true) {
-    return RequestResponseHandler::CONNECTION_CLOSED;
+    return RqRsHandler::CONNECTION_CLOSED;
   }
   this->request = request;
   debugs("Request Received\n", request);
@@ -48,58 +61,71 @@ int NetUtils::RequestResponseHandler::readRequestFromSocket()
 
   int host_idx = Utils::find_string_index(rq_delim, httpconstant::fields::host);
   if (host_idx == -1) {
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::ERROR;
   } // TODO
   this->setHostAndPort(rq_delim[host_idx]);
   int method_idx = Utils::find_string_index(rq_delim, httprequest::type);
   if (method_idx == -1) {
     this->setMethodUrlHttp(rq_delim[0]);
-    return RequestResponseHandler::UNKNOWN_REQUEST;
+    return RqRsHandler::UNKNOWN_REQUEST;
   }
   this->setMethodUrlHttp(rq_delim[method_idx]);
   if (NetUtils::blocked_host.find(this->host) == NetUtils::blocked_host.end())
     this->hostIp = NetUtils::resolve_host_name(this->host);
   else {
-    this->hostBlocked = true;
-    return RequestResponseHandler::HOST_BLOCKED;
+    this->host_blocked = true;
+    return RqRsHandler::HOST_BLOCKED;
   }
   if (this->hostIp.length() == 0)
-    return RequestResponseHandler::NO_HOST_RESOLVE;
+    return RqRsHandler::NO_HOST_RESOLVE;
   if (NetUtils::blocked_ip.find(this->hostIp) != NetUtils::blocked_ip.end()) {
-    this->ipBlocked = true;
-    return RequestResponseHandler::IP_BLOCKED;
+    this->ip_blocked = true;
+    return RqRsHandler::IP_BLOCKED;
   }
-  return RequestResponseHandler::SUCCESS;
+
+  this->url_hash = Utils::get_md5_hash(this->host + this->url);
+  return RqRsHandler::SUCCESS;
 }
 
-int NetUtils::RequestResponseHandler::readResponseFromRemote()
+int NetUtils::RqRsHandler::sendRqToRemote()
 {
-  u_short socket;
+  /* Creating a new socket for Remote connection
+   * TODO: Reuse the same socket
+   */
+  bool in_cache = Utils::check_in_cache(this->url_hash);
+  if (in_cache) {
+    return RqRsHandler::RETURN_CACHE;
+  }
+  u_short remote_socket;
   ssize_t bytes_sent = 0, total_bytes = this->request.length();
   const char* request_ptr = this->request.c_str();
-  this->remote_socket = NetUtils::create_remote_socket(this->hostIp, this->port);
-  socket = this->remote_socket;
-  if (socket == NetUtils::ERROR) {
+
+  // Create a new socket only if already existing socket doesn't exist
+  // TODO: Handle the case when remote closes the connection and new remote_socket is needed
+  if (this->remote_socket == 0)
+    this->remote_socket = NetUtils::create_remote_socket(this->hostIp, this->port);
+  remote_socket = this->remote_socket;
+
+  if (remote_socket == NetUtils::ERROR) {
     // TODO : Handle error cases here
 
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::ERROR;
   }
-
   debugs("Sending Request to remote", this->request);
   // Sending the request received from the client
   while (bytes_sent != total_bytes) {
-    if ((bytes_sent += send(socket, request_ptr + bytes_sent, total_bytes - bytes_sent, 0)) < 0) {
+    if ((bytes_sent += send(remote_socket, request_ptr + bytes_sent, total_bytes - bytes_sent, 0)) < 0) {
       Utils::print_error_with_message("Unable to send request to the remote server");
       return ERROR;
     }
   }
-  return SUCCESS;
+  return RqRsHandler::SUCCESS;
 }
 
-int NetUtils::RequestResponseHandler::sendResponseToSocket()
+int NetUtils::RqRsHandler::sendRsToClient()
 {
   ssize_t r_bytes, t_bytes, content_length;
-  u_short remote_socket = this->remote_socket, client_socket = this->socket;
+  u_short remote_socket = this->remote_socket, client_socket = this->client_socket;
   u_char* buffer;
   char cBuff;
   std::string header;
@@ -110,11 +136,11 @@ int NetUtils::RequestResponseHandler::sendResponseToSocket()
   while (true) {
     if ((t_bytes = recv(remote_socket, &cBuff, 1, 0)) < 0) {
       Utils::print_error_with_message("Unable to receive from remote server");
-      return RequestResponseHandler::ERROR;
+      return RqRsHandler::ERROR;
     }
 
     if (t_bytes == 0) {
-      return RequestResponseHandler::CONNECTION_CLOSED;
+      return RqRsHandler::CONNECTION_CLOSED;
     }
     r_bytes += t_bytes;
     header += cBuff;
@@ -128,13 +154,13 @@ int NetUtils::RequestResponseHandler::sendResponseToSocket()
 
   if (content_length == NO_CONTENT_LENGTH) {
     // TODO: Handle Error
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::NO_CONTENT_LENGTH;
   }
 
   debug("Sending header to client");
   if (NetUtils::send_to_socket(client_socket, (void*)header.c_str(), r_bytes, "Unable to send headers to client") == NetUtils::ERROR) {
     // TODO: Handle Error
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::ERROR;
   }
 
   buffer = (u_char*)malloc(content_length * sizeof(u_char));
@@ -143,14 +169,18 @@ int NetUtils::RequestResponseHandler::sendResponseToSocket()
   debug("Receving content from remote");
   if (NetUtils::recv_from_socket(remote_socket, (void*)buffer, content_length, "Unable to receive content from remote") == NetUtils::ERROR) {
     // TODO: Handle Error
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::ERROR;
   }
 
   debug("Sending content to client");
   if (NetUtils::send_to_socket(client_socket, (void*)buffer, content_length, "Unable to send content to client") == NetUtils::ERROR) {
     // TODO: Handle Error
-    return RequestResponseHandler::ERROR;
+    return RqRsHandler::ERROR;
   }
+
+  debug("Saving the page fetched to cache");
+  Utils::save_to_cache(this->url_hash, buffer, content_length);
+  debug("Saved the page fetched to cache");
 
   debug("Extracting hyperlink from content");
   std::string string_buffer((char*)buffer);
@@ -160,9 +190,9 @@ int NetUtils::RequestResponseHandler::sendResponseToSocket()
     debugs("Hyperlink Extracted", s);
   }
   free(buffer);
-  return RequestResponseHandler::SUCCESS;
+  return RqRsHandler::SUCCESS;
 }
-void NetUtils::RequestResponseHandler::setHostAndPort(std::string line)
+void NetUtils::RqRsHandler::setHostAndPort(std::string line)
 {
   std::vector<std::string> tokens = Utils::split_string_to_vector(line, ":");
   // tokens[0] is the "Host"
@@ -174,7 +204,7 @@ void NetUtils::RequestResponseHandler::setHostAndPort(std::string line)
     this->port = (u_short)strtoul(tokens[2].c_str(), NULL, 0);
 }
 
-void NetUtils::RequestResponseHandler::setMethodUrlHttp(std::string line)
+void NetUtils::RqRsHandler::setMethodUrlHttp(std::string line)
 {
   std::string buff;
   std::stringstream ss(line);
@@ -185,11 +215,10 @@ void NetUtils::RequestResponseHandler::setMethodUrlHttp(std::string line)
   this->method = x[0];
   this->url = x[1];
   this->http = x[2];
-  debugs("HTTP", this->http);
   // TODO : Handle error cases here
 }
 
-int NetUtils::RequestResponseHandler::getContentLengthFromHeader(std::string& header)
+int NetUtils::RqRsHandler::getContentLengthFromHeader(std::string& header)
 {
   std::vector<std::string> tokens = Utils::split_string_to_vector(header, httpconstant ::fields ::delim);
   int length = NO_CONTENT_LENGTH;
@@ -208,11 +237,34 @@ int NetUtils::RequestResponseHandler::getContentLengthFromHeader(std::string& he
   return length;
 }
 
-bool NetUtils::RequestResponseHandler::handleError(int status)
+int NetUtils::RqRsHandler::sendCacheToClient()
+{
+  std::ostringstream header;
+  std::vector<u_char> body;
+  Utils::read_from_cache(this->url_hash, body);
+
+  header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_ok_200 : httpresponse::header::http_10_ok_200);
+  header << httpconstant::fields::delim;
+  header << httpconstant::fields::content_length << ": " << body.size() << httpconstant::fields::delim;
+  header << httpconstant::fields::content_type << ": " << httpresponse::cache_content_type << httpconstant::fields::delim;
+  header << httpconstant::fields::cache << ": true" << httpconstant::fields::delim;
+  header << httpconstant::fields::delim;
+
+  std::string header_str = header.str();
+  int response_status = NetUtils::send_to_socket(this->client_socket, (void*)header_str.c_str(), header_str.length(), "Unable to send header from cache");
+  // TODO: Case when client is closed
+  if (response_status != NetUtils::SUCCESS)
+    return RqRsHandler::ERROR;
+
+  response_status = NetUtils::send_to_socket(this->client_socket, (void*)&body[0], body.size(), "Unable to send body from cache");
+
+  return (response_status == NetUtils::SUCCESS) ? RqRsHandler::SUCCESS : RqRsHandler::ERROR;
+}
+bool NetUtils::RqRsHandler::handleError(int status)
 {
   std::string body, response;
   std::ostringstream header;
-  if (status == RequestResponseHandler::HOST_BLOCKED || status == RequestResponseHandler::IP_BLOCKED) {
+  if (status == RqRsHandler::HOST_BLOCKED || status == RqRsHandler::IP_BLOCKED) {
 
     const char* template_strings[] = {
       httpresponse::templates::generic.c_str(),
@@ -222,7 +274,7 @@ bool NetUtils::RequestResponseHandler::handleError(int status)
 
     body = Utils::generate_dynamic_string(template_strings, 3);
     header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_error_403 : httpresponse::header::http_10_error_403);
-  } else if (status == RequestResponseHandler::UNKNOWN_REQUEST) {
+  } else if (status == RqRsHandler::UNKNOWN_REQUEST) {
 
     const char* template_strings[] = {
       httpresponse::templates::generic.c_str(),
@@ -232,7 +284,7 @@ bool NetUtils::RequestResponseHandler::handleError(int status)
 
     body = Utils::generate_dynamic_string(template_strings, 3);
     header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_error_400 : httpresponse::header::http_10_error_400);
-  } else if (status == RequestResponseHandler::NO_HOST_RESOLVE) {
+  } else if (status == RqRsHandler::NO_HOST_RESOLVE) {
 
     const char* template_strings[] = {
       httpresponse::templates::generic.c_str(),
@@ -250,10 +302,10 @@ bool NetUtils::RequestResponseHandler::handleError(int status)
   header << httpconstant::fields::delim;
   header << body;
   response = header.str();
-  int response_status = NetUtils::send_to_socket(this->socket, (void*)response.c_str(), response.length(), "Unable to responsd error message");
+  int response_status = NetUtils::send_to_socket(this->client_socket, (void*)response.c_str(), response.length(), "Unable to responsd error message");
   return (response_status == NetUtils::SUCCESS) ? true : false;
 }
-std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::RequestResponseHandler& rq)
+std::ostream& NetUtils::operator<<(std::ostream& os, const NetUtils::RqRsHandler& rq)
 {
   os << "\n\tMethod: " << rq.method;
   os << "\n\tURL: " << rq.url;

@@ -1,7 +1,7 @@
 #Makefile
 CC = g++
 INCLUDE = /usr/lib
-LIBS =-pthread
+LIBS =-pthread -lcrypto -lssl
 OBJS =
 CFLAGS =-std=c++0x -g -Wall 
 PORT = 8001
@@ -13,7 +13,9 @@ proxy:
 
 clean:
 	rm -rf bin
+	rm -rf cache
 	mkdir -p bin
+	mkdir -p cache
 
 run:
 	bin/webproxy $(PORT) $(TIMEOUT) &> logs/webproxy.log &

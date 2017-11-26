@@ -2,6 +2,7 @@
 #include "http.h"
 #include "utils.h"
 #include <arpa/inet.h>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -39,24 +40,25 @@ int send_to_socket(u_short, void*, ssize_t, std::string);
 int recv_from_socket(u_short, void*, ssize_t, std::string);
 void fill_block_ip(std::string&);
 
-class RequestResponseHandler {
+class RqRsHandler {
 
   void setMethodUrlHttp(std::string);
   void setHostAndPort(std::string);
   int getContentLengthFromHeader(std::string&);
 
   public:
-  static const int CONNECTION_CLOSED = 0;
-  static const int ERROR = 1;
-  static const int SUCCESS = 2;
-  static const int NO_CONTENT_LENGTH = -1;
-  static const int HOST_BLOCKED = 3;
-  static const int IP_BLOCKED = 4;
-  static const int UNKNOWN_REQUEST = 5;
-  static const int NO_HOST_RESOLVE = 6;
+  static const int CONNECTION_CLOSED;
+  static const int ERROR;
+  static const int SUCCESS;
+  static const int NO_CONTENT_LENGTH;
+  static const int HOST_BLOCKED;
+  static const int IP_BLOCKED;
+  static const int UNKNOWN_REQUEST;
+  static const int NO_HOST_RESOLVE;
+  static const int RETURN_CACHE;
   std::string method;
   u_short port;
-  u_short socket;
+  u_short client_socket;
   u_short remote_socket;
   std::string url;
   std::string host;
@@ -65,15 +67,17 @@ class RequestResponseHandler {
   std::string hostIp;
   std::string request;
   std::string response;
-  bool hostBlocked;
-  bool ipBlocked;
-  RequestResponseHandler(u_short socket);
-  ~RequestResponseHandler();
+  std::string url_hash;
+  bool host_blocked;
+  bool ip_blocked;
+  RqRsHandler(u_short);
+  ~RqRsHandler();
 
-  int readRequestFromSocket();
-  int readResponseFromRemote();
-  int sendResponseToSocket();
+  int readRqFromClient();
+  int sendRqToRemote();
+  int sendRsToClient();
+  int sendCacheToClient();
   bool handleError(int);
 };
-std::ostream& operator<<(std::ostream&, const NetUtils::RequestResponseHandler&);
+std::ostream& operator<<(std::ostream&, const NetUtils::RqRsHandler&);
 }
