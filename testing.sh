@@ -7,5 +7,5 @@ HTTP_REQ_END='\r\n\r\n'
 
 set -x
 # Normal Requests
-(echo -en "GET / HTTP/1.1${HTTP_REQ_DELIM}Host: man7.org${HTTP_REQ_END}") | nc $HOST $PORT
+(echo -en "GET / HTTP/1.1${HTTP_REQ_DELIM}Host: man7.org${HTTP_REQ_END}") | nc  $HOST $PORT -w 1
 set +x

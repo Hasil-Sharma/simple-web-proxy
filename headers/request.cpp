@@ -30,35 +30,25 @@ NetUtils::RqRsHandler::~RqRsHandler()
 int NetUtils::RqRsHandler::readRqFromClient()
 {
   // Assumption is withing DEFAULT_BUFFLEN entire request can be read
+  // TODO: Fix this
   std::string request;
-  ssize_t r_bytes = 0, temp_bytes;
+  std::vector<u_char> body;
   char recvbuff[DEFAULT_BUFFLEN + 1];
   bool connection_closed = false;
+
   memset(recvbuff, 0, (DEFAULT_BUFFLEN + 1) * sizeof(char));
-  while (r_bytes < DEFAULT_BUFFLEN && !connection_closed) {
-
-    if ((temp_bytes = recv(this->client_socket, recvbuff + r_bytes, DEFAULT_BUFFLEN - r_bytes, 0)) < 0) {
-      Utils::print_error_with_message("Unable to read request from socket");
-    }
-    // Handling the case of closing connection
-    if (temp_bytes == 0) {
-      connection_closed = true;
-      break;
-    }
-    //debugs("Read from socket", r_bytes);
-    r_bytes += temp_bytes;
-    request = recvbuff;
-    if (request.find(httprequest::request_end) != std::string::npos)
-      break;
-  }
-
+  debug("Start: Read request from client socket");
+  // Headers received doesn't have the request end
+  NetUtils::recv_headers(this->client_socket, request, body);
+  debugs("Request from client", request);
+  debug("End: Read request from client socket");
   if (connection_closed == true) {
     return RqRsHandler::CONNECTION_CLOSED;
   }
-  this->request = request;
-  debugs("Request Received\n", request);
-  std::vector<std::string> rq_delim = Utils::split_string_to_vector(request, httpconstant::fields::delim);
 
+  // Extracting parameters from the HTTP request
+  std::vector<std::string> rq_delim = Utils::split_string_to_vector(request, httpconstant::fields::delim);
+  this->request = request + httprequest::request_end;
   int host_idx = Utils::find_string_index(rq_delim, httpconstant::fields::host);
   if (host_idx == -1) {
     return RqRsHandler::ERROR;
@@ -97,7 +87,7 @@ int NetUtils::RqRsHandler::sendRqToRemote()
     return RqRsHandler::RETURN_CACHE;
   }
   u_short remote_socket;
-  ssize_t bytes_sent = 0, total_bytes = this->request.length();
+  ssize_t total_bytes = this->request.length();
   const char* request_ptr = this->request.c_str();
 
   // Create a new socket only if already existing socket doesn't exist
@@ -111,45 +101,29 @@ int NetUtils::RqRsHandler::sendRqToRemote()
 
     return RqRsHandler::ERROR;
   }
-  debugs("Sending Request to remote", this->request);
+  debug("Start: Send Request to remote");
   // Sending the request received from the client
-  while (bytes_sent != total_bytes) {
-    if ((bytes_sent += send(remote_socket, request_ptr + bytes_sent, total_bytes - bytes_sent, 0)) < 0) {
-      Utils::print_error_with_message("Unable to send request to the remote server");
-      return ERROR;
-    }
-  }
+  if (NetUtils::send_to_socket(remote_socket, request_ptr, total_bytes, "Unable to send request to the remote server") != NetUtils::SUCCESS)
+    return RqRsHandler::ERROR;
+  debug("End: Send Request to remote");
   return RqRsHandler::SUCCESS;
 }
 
 int NetUtils::RqRsHandler::sendRsToClient()
 {
-  ssize_t r_bytes, t_bytes, content_length;
+  ssize_t content_length;
   u_short remote_socket = this->remote_socket, client_socket = this->client_socket;
   u_char* buffer;
-  char cBuff;
   std::string header;
+  std::vector<u_char> body;
   // Reading header line by line
   // TODO: Optimize this
 
-  r_bytes = 0;
-  while (true) {
-    if ((t_bytes = recv(remote_socket, &cBuff, 1, 0)) < 0) {
-      Utils::print_error_with_message("Unable to receive from remote server");
-      return RqRsHandler::ERROR;
-    }
-
-    if (t_bytes == 0) {
-      return RqRsHandler::CONNECTION_CLOSED;
-    }
-    r_bytes += t_bytes;
-    header += cBuff;
-    if (header.find(httprequest::request_end) != std::string::npos) {
-      //debugs("Response Header Read Completely", header);
-      break;
-    }
-  }
-
+  debug("Start: Reading header from remote");
+  NetUtils::recv_headers(remote_socket, header, body);
+  debug("End: Reading header from remote");
+  debugs("Header from Remote", header);
+  header += httprequest::request_end;
   content_length = this->getContentLengthFromHeader(header);
 
   if (content_length == NO_CONTENT_LENGTH) {
@@ -158,11 +132,15 @@ int NetUtils::RqRsHandler::sendRsToClient()
   }
 
   debug("Sending header to client");
-  if (NetUtils::send_to_socket(client_socket, (void*)header.c_str(), r_bytes, "Unable to send headers to client") == NetUtils::ERROR) {
+  if (NetUtils::send_to_socket(client_socket, (void*)header.c_str(), header.length(), "Unable to send headers to client") == NetUtils::ERROR) {
     // TODO: Handle Error
     return RqRsHandler::ERROR;
   }
 
+  if (NetUtils::send_to_socket(client_socket, (void*)&body[0], body.size(), "Unable to send partial content to client") == NetUtils::ERROR) {
+    return RqRsHandler::ERROR;
+  }
+  content_length -= body.size();
   buffer = (u_char*)malloc(content_length * sizeof(u_char));
   memset(buffer, 0, content_length * sizeof(u_char));
 
@@ -177,6 +155,11 @@ int NetUtils::RqRsHandler::sendRsToClient()
     // TODO: Handle Error
     return RqRsHandler::ERROR;
   }
+
+  // Closing the remote socket after reading the response
+  debug("Closing the Remote socket");
+  close(this->remote_socket);
+  this->remote_socket = 0;
 
   debug("Saving the page fetched to cache");
   Utils::save_to_cache(this->url_hash, buffer, content_length);

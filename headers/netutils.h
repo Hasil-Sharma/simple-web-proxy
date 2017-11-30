@@ -36,10 +36,10 @@ u_short create_socket(u_short);
 void spawn_request_handler(u_short);
 std::string resolve_host_name(std::string);
 u_short create_remote_socket(std::string, u_short);
-int send_to_socket(u_short, void*, ssize_t, std::string);
+int send_to_socket(u_short, const void*, ssize_t, std::string);
 int recv_from_socket(u_short, void*, ssize_t, std::string);
 void fill_block_ip(std::string&);
-
+void recv_headers(u_short, std::string&, std::vector<u_char>&);
 class RqRsHandler {
 
   void setMethodUrlHttp(std::string);
