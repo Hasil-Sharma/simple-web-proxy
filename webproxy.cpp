@@ -1,5 +1,6 @@
 #include "debug.h"
 #include "netutils.h"
+#include "signal.h"
 #include "utils.h"
 #include <iostream>
 #include <thread>
@@ -13,12 +14,14 @@ int main(int argc, char** argv)
     Utils::print_error("USAGE: <PORT> <TIMEOUT>");
     exit(EXIT_FAILURE);
   }
+  int n = 1;
   std::string file_path = "BLOCKED";
   NetUtils::fill_block_ip(file_path);
   port = (u_short)strtoul(argv[1], NULL, 0);
   timeout = (u_short)strtoul(argv[2], NULL, 0);
   listen_fd = NetUtils::create_socket(port);
   Utils::set_cache_timeout(timeout);
+  signal(SIGPIPE, SIG_IGN);
   while (true) {
     debug("Waiting to accept connection");
     if ((conn_fd = accept(listen_fd, (struct sockaddr*)&remote_addr, &addr_size)) < 0) {

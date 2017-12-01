@@ -86,7 +86,7 @@ void Utils::save_to_cache(const std::string& file_name, const u_char* buffer, ss
   std::string file_path;
   Utils::get_path_to_file_cache(file_name, file_path);
   debugs("File Path", file_path);
-  std::ofstream outfile(file_path, std::ofstream::binary);
+  std::ofstream outfile(file_path, std::ofstream::binary | std::ofstream::app);
   outfile.write((const char*)&buffer[0], buffer_size);
   outfile.close();
   debug("Written to Cache");
@@ -98,7 +98,6 @@ void Utils::set_cache_timeout(int timeout)
 bool Utils::check_in_cache(const std::string& file_name)
 {
   bool exist_flag, obselete_flag = false;
-  debugs("Timeout", Utils::cache_timeout);
   std::string file_path;
   Utils::get_path_to_file_cache(file_name, file_path);
   std::ifstream f(file_path.c_str());
@@ -111,7 +110,6 @@ bool Utils::check_in_cache(const std::string& file_name)
   time_t last_modification = attr.st_mtime, now;
   time(&now);
   double seconds = difftime(now, last_modification);
-  debugs("Time elaspsed", seconds);
   if (seconds > Utils::cache_timeout) {
     obselete_flag = true;
     debugs("Removing the file", file_path);

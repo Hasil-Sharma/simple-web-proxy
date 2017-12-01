@@ -89,61 +89,116 @@ void NetUtils::spawn_request_handler(u_short client_socket)
 {
   int status;
   NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
-  while (true) {
-    //std::thread::id this_id = std::this_thread::get_id();
-    //std::cout << "DEBUG: Thread ID:" << std::hex << this_id << std::endl;
+  //while (true) {
+  //std::thread::id this_id = std::this_thread::get_id();
+  //std::cout << "DEBUG: Thread ID:" << std::hex << this_id << std::endl;
 
-    debug("Reading Request from client");
-    status = rq.readRqFromClient();
-    debug("Read Request from client");
+  debug("Start: Read Request from client");
+  status = rq.readRqFromClient();
+  debug("End: Read Request from client");
 
-    if (status == NetUtils::RqRsHandler::CONNECTION_CLOSED) {
-      debug("Connection Closed");
-      break;
-    } else if (status == RqRsHandler::ERROR) {
-      // TODO: handle
-      break;
-    } else if (status == RqRsHandler::HOST_BLOCKED || status == RqRsHandler::IP_BLOCKED || status == RqRsHandler::UNKNOWN_REQUEST || status == RqRsHandler::NO_HOST_RESOLVE) {
+  if (status == NetUtils::RqRsHandler::CONNECTION_CLOSED) {
+    debug("Connection Closed");
+    //break;
+    return;
+  } else if (status == RqRsHandler::ERROR) {
+    // TODO: handle
+    //break;
+    return;
+  } else if (status == RqRsHandler::HOST_BLOCKED || status == RqRsHandler::IP_BLOCKED || status == RqRsHandler::UNKNOWN_REQUEST || status == RqRsHandler::NO_HOST_RESOLVE) {
 
-      // TODO: Handle;
-      debug("Requested Remote is Blocked");
-      rq.handleError(status);
-      break;
-    }
+    // TODO: Handle;
+    debug("Requested Remote is Blocked");
+    rq.handleError(status);
+    //break;
+    return;
+  }
 
-    debug("Sending Request to Remote");
-    status = rq.sendRqToRemote();
-    debug("Sent Request to Remote");
+  debug("Start: Send Request to Remote");
+  status = rq.sendRqToRemote();
+  debug("End: Send Request to Remote");
 
+  if (status == RqRsHandler::ERROR) {
+    // TODO Handle;
+    //break;
+    return;
+  } else if (status == RqRsHandler::RETURN_CACHE) {
+    debug("Sending cached page to client");
+    status = rq.sendCacheToClient();
     if (status == RqRsHandler::ERROR) {
-      // TODO Handle;
-      break;
-    } else if (status == RqRsHandler::RETURN_CACHE) {
-      debug("Sending cached page to client");
-      status = rq.sendCacheToClient();
-      if (status == RqRsHandler::ERROR) {
-        break;
-        // TODO: Handle better
-      }
-      debug("Sent cached page to client");
+      return;
+      //break;
+      // TODO: Handle better
+    }
+    debug("Sent cached page to client");
+    return;
+    //continue;
+  }
+
+  debug("Start: Send Response to Client");
+  status = rq.sendRsToClient();
+  debug("End: Send Response to Client");
+
+  if (status == RqRsHandler::ERROR) {
+    debug("Error in sending response to client");
+    return;
+    //break;
+    // TODO Handle better
+  } else if (status == RqRsHandler::NO_CONTENT_LENGTH) {
+    debug("No Content-Length Supplied in response");
+    rq.handleError(status);
+    return;
+    //break;
+  }
+  //}
+}
+void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remote_ip, u_short port, std::set<std::string> hyperlinks)
+{
+  for (auto& hyperlink : hyperlinks) {
+    // To avoid reading further in case of no content-length supplied
+    // TODO: Do not save error pages
+    debugs("Extracted Link", hyperlink);
+    u_short socket = NetUtils::create_remote_socket(remote_ip, port);
+
+    std::stringstream request;
+    request << "GET /" << hyperlink << " " << httpconstant::http_11;
+    request << httpconstant::fields::delim;
+    request << "Host: " << remote_host;
+    request << httprequest::request_end;
+    if (NetUtils::send_to_socket(socket, request.str().c_str(), request.str().length(), "Prefetch: error in sending request") != NetUtils::SUCCESS) {
+      close(socket);
       continue;
     }
 
-    debug("Sending Response to Client");
-    status = rq.sendRsToClient();
-    debug("Sent Response to Client");
-
-    if (status == RqRsHandler::ERROR) {
-      debug("Error in sending response to client");
-      break;
-      // TODO Handle better
-    } else if (status == RqRsHandler::NO_CONTENT_LENGTH) {
-      debug("No Content-Length Supplied in response");
-      break;
+    std::string header;
+    std::vector<u_char> body;
+    NetUtils::recv_headers(socket, header, body);
+    header += httprequest::request_end;
+    ssize_t content_length = NetUtils::RqRsHandler::getContentLengthFromHeader(header);
+    if (content_length == NetUtils::RqRsHandler::NO_CONTENT_LENGTH) {
+      close(socket);
+      continue;
     }
+
+    u_char* buffer = (u_char*)malloc(content_length * sizeof(u_char));
+    memset(buffer, 0, content_length * sizeof(u_char));
+    for (int i = 0; i < body.size(); i++)
+      buffer[i] = body[i];
+
+    if (NetUtils::recv_from_socket(socket, (void*)(buffer + body.size()), content_length - body.size(), "Prefetch: unable to recv content") != NetUtils::SUCCESS) {
+      free(buffer);
+      close(socket);
+      continue;
+    }
+    std::stringstream url_string;
+    url_string << remote_host << "http://" << remote_host << "/" << hyperlink;
+    debugs("Prefetched URL String", url_string.str());
+    std::string url_hash = Utils::get_md5_hash(url_string.str());
+    debugs("Prefetched Cache", url_hash);
+    Utils::save_to_cache(url_hash, (u_char*)header.c_str(), header.length());
+    Utils::save_to_cache(url_hash, buffer, content_length);
   }
 }
-
 u_short NetUtils::create_remote_socket(std::string remote_ip, u_short port)
 {
   u_short sockfd;

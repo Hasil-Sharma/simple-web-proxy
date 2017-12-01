@@ -34,6 +34,7 @@ extern int SUCCESS;
 
 u_short create_socket(u_short);
 void spawn_request_handler(u_short);
+void spawn_prefetch_handler(std::string, std::string, u_short, std::set<std::string>);
 std::string resolve_host_name(std::string);
 u_short create_remote_socket(std::string, u_short);
 int send_to_socket(u_short, const void*, ssize_t, std::string);
@@ -44,7 +45,6 @@ class RqRsHandler {
 
   void setMethodUrlHttp(std::string);
   void setHostAndPort(std::string);
-  int getContentLengthFromHeader(std::string&);
 
   public:
   static const int CONNECTION_CLOSED;
@@ -78,6 +78,8 @@ class RqRsHandler {
   int sendRsToClient();
   int sendCacheToClient();
   bool handleError(int);
+
+  static int getContentLengthFromHeader(std::string&);
 };
 std::ostream& operator<<(std::ostream&, const NetUtils::RqRsHandler&);
 }

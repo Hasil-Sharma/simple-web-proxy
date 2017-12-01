@@ -15,9 +15,9 @@ const std::string http_11 = "HTTP/1.1";
 namespace httpresponse {
 namespace templates {
   const std::string generic = "<html><body>%s</body></html>\n";
-  const std::string error_403 = "<h1>Forbidden<h1><br/>You don't have permission to access %s on this server";
-  const std::string error_400 = "<h1>BadRequest<h1><br/>Method not supported: %s";
-  const std::string error_404 = "<h1>Not Found<h1><br/>Not Found: %s";
+  const std::string error_403 = "<h1>Forbidden</h1><br/>You don't have permission to access %s on this server";
+  const std::string error_400 = "<h1>BadRequest</h1><br/>Method not supported: %s";
+  const std::string error_404 = "<h1>Not Found</h1><br/>Not Found: %s";
 }
 namespace header {
   const std::string error_404 = "404 Not Found";

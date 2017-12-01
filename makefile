@@ -5,7 +5,7 @@ LIBS =-pthread -lcrypto -lssl
 OBJS =
 CFLAGS =-std=c++0x -g -Wall 
 PORT = 8001
-TIMEOUT = 10
+TIMEOUT = 3600
 all: clean proxy run
 valgrind: clean proxy memory-leak
 proxy:
