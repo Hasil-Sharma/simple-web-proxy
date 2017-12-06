@@ -8,6 +8,7 @@ namespace fields {
   const std::string cache = "Cache";
   const std::string host = "Host";
   const std::string delim = "\r\n";
+  const std::string connection_close_value = "close";
 }
 const std::string http_10 = "HTTP/1.0";
 const std::string http_11 = "HTTP/1.1";

@@ -11,6 +11,7 @@ int DEFAULT_PORT = 80;
 int DEFAULT_BUFFLEN = 1024;
 int ERROR = -1;
 int SUCCESS = 1;
+int CONNECTION_CLOSED = 2;
 };
 
 void NetUtils::fill_block_ip(std::string& file_path)
@@ -87,6 +88,7 @@ std::string NetUtils::resolve_host_name(std::string hostname)
 
 void NetUtils::spawn_request_handler(u_short client_socket)
 {
+  // One thread per request
   int status;
   NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
   //while (true) {
@@ -159,7 +161,7 @@ void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remot
     // TODO: Do not save error pages
     debugs("Extracted Link", hyperlink);
     u_short socket = NetUtils::create_remote_socket(remote_ip, port);
-
+    u_char* buffer;
     std::stringstream request;
     request << "GET /" << hyperlink << " " << httpconstant::http_11;
     request << httpconstant::fields::delim;
@@ -171,30 +173,55 @@ void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remot
     }
 
     std::string header;
-    std::vector<u_char> body;
+    std::vector<u_char> body, buffer_vector;
     NetUtils::recv_headers(socket, header, body);
+    header += httpconstant::fields::delim + httpconstant::fields::cache + ": true";
     header += httprequest::request_end;
     ssize_t content_length = NetUtils::RqRsHandler::getContentLengthFromHeader(header);
     if (content_length == NetUtils::RqRsHandler::NO_CONTENT_LENGTH) {
-      close(socket);
-      continue;
-    }
 
-    u_char* buffer = (u_char*)malloc(content_length * sizeof(u_char));
-    memset(buffer, 0, content_length * sizeof(u_char));
-    for (int i = 0; i < body.size(); i++)
-      buffer[i] = body[i];
+      buffer = (u_char*)malloc(NetUtils::DEFAULT_BUFFLEN * sizeof(u_char));
 
-    if (NetUtils::recv_from_socket(socket, (void*)(buffer + body.size()), content_length - body.size(), "Prefetch: unable to recv content") != NetUtils::SUCCESS) {
+      while (true) {
+        memset(buffer, 0, NetUtils::DEFAULT_BUFFLEN * sizeof(u_char));
+        int status = NetUtils::recv_from_socket(socket, (void*)buffer, NetUtils::DEFAULT_BUFFLEN, "Unable to receive content from remote: chunked");
+        if (status == NetUtils::ERROR) {
+          break;
+        }
+        for (int i = 0; i < NetUtils::DEFAULT_BUFFLEN; i++) {
+          if (buffer[i] == 0)
+            break;
+          buffer_vector.push_back(buffer[i]);
+        }
+        if (status == NetUtils::CONNECTION_CLOSED) {
+          break;
+        }
+      }
       free(buffer);
+      content_length = buffer_vector.size();
+      buffer = (u_char*)malloc(content_length * sizeof(u_char));
+      memset(buffer, 0, content_length * sizeof(u_char));
+      std::copy(buffer_vector.begin(), buffer_vector.end(), buffer);
       close(socket);
-      continue;
+    } else {
+
+      buffer = (u_char*)malloc(content_length * sizeof(u_char));
+      memset(buffer, 0, content_length * sizeof(u_char));
+      for (int i = 0; i < body.size(); i++)
+        buffer[i] = body[i];
+
+      if (NetUtils::recv_from_socket(socket, (void*)(buffer + body.size()), content_length - body.size(), "Prefetch: unable to recv content") != NetUtils::SUCCESS) {
+        free(buffer);
+        close(socket);
+        continue;
+      }
     }
     std::stringstream url_string;
     url_string << remote_host << "http://" << remote_host << "/" << hyperlink;
     debugs("Prefetched URL String", url_string.str());
     std::string url_hash = Utils::get_md5_hash(url_string.str());
     debugs("Prefetched Cache", url_hash);
+
     Utils::save_to_cache(url_hash, (u_char*)header.c_str(), header.length());
     Utils::save_to_cache(url_hash, buffer, content_length);
   }
@@ -244,12 +271,17 @@ int NetUtils::send_to_socket(u_short port, const void* buffer, ssize_t buffer_le
 
 int NetUtils::recv_from_socket(u_short port, void* buffer, ssize_t buffer_length, std::string error_msg)
 {
-  ssize_t r_bytes = 0;
+  ssize_t r_bytes = 0, t_bytes;
   while (r_bytes != buffer_length) {
-    if ((r_bytes += recv(port, (u_char*)buffer + r_bytes, buffer_length - r_bytes, 0)) < 0) {
+    if ((t_bytes = recv(port, (u_char*)buffer + r_bytes, buffer_length - r_bytes, 0)) < 0) {
       Utils::print_error_with_message(error_msg);
       return NetUtils::ERROR;
     }
+    if (t_bytes == 0) {
+      // Connection closed by remote
+      return NetUtils::CONNECTION_CLOSED;
+    }
+    r_bytes += t_bytes;
   }
 
   return NetUtils::SUCCESS;

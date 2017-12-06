@@ -31,6 +31,7 @@ extern int DEFAULT_PORT;
 extern int DEFAULT_BUFFLEN;
 extern int ERROR;
 extern int SUCCESS;
+extern int CONNECTION_CLOSED;
 
 u_short create_socket(u_short);
 void spawn_request_handler(u_short);
