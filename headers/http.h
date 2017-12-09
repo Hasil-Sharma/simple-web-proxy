@@ -45,4 +45,6 @@ const std::string cache_content_type = "text/html; charset=UTF-8";
 namespace httprequest {
 const std::string request_end = "\r\n\r\n";
 const std::string type = "GET";
+const std::string connection_keep_alive = "Connection: keep-alive\r\n";
+const std::string connection_close = "Connection: close\r\n";
 }

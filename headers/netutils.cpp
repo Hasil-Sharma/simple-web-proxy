@@ -64,6 +64,19 @@ u_short NetUtils::create_socket(u_short port)
   return sockfd;
 }
 
+void NetUtils::add_close_to_headers(std::string& headers)
+{
+  if (headers.find(httprequest::connection_close) == std::string::npos) {
+    if (headers.find(httprequest::connection_keep_alive) != std::string::npos) {
+      // Substitue in the
+      headers.replace(headers.find(httprequest::connection_keep_alive), httprequest::connection_keep_alive.length(), httprequest::connection_close);
+    } else {
+      // Add the header
+      headers.replace(headers.find(httprequest::request_end), httprequest::request_end.length(), httprequest::connection_close);
+      headers += httpconstant::fields::delim;
+    }
+  }
+}
 std::string NetUtils::resolve_host_name(std::string hostname)
 {
   std::string ip;
@@ -128,6 +141,7 @@ void NetUtils::spawn_request_handler(u_short client_socket)
     debug("Sending cached page to client");
     status = rq.sendCacheToClient();
     if (status == RqRsHandler::ERROR) {
+      debug("Error in sending cache");
       return;
       //break;
       // TODO: Handle better
@@ -179,7 +193,7 @@ void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remot
     header += httprequest::request_end;
     ssize_t content_length = NetUtils::RqRsHandler::getContentLengthFromHeader(header);
     if (content_length == NetUtils::RqRsHandler::NO_CONTENT_LENGTH) {
-
+      buffer_vector = body;
       buffer = (u_char*)malloc(NetUtils::DEFAULT_BUFFLEN * sizeof(u_char));
 
       while (true) {
@@ -215,17 +229,20 @@ void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remot
         close(socket);
         continue;
       }
+      close(socket);
     }
     std::stringstream url_string;
     url_string << remote_host << "http://" << remote_host << "/" << hyperlink;
     debugs("Prefetched URL String", url_string.str());
     std::string url_hash = Utils::get_md5_hash(url_string.str());
     debugs("Prefetched Cache", url_hash);
-
-    Utils::save_to_cache(url_hash, (u_char*)header.c_str(), header.length());
-    Utils::save_to_cache(url_hash, buffer, content_length);
+    if (header.find("200 OK") != std::string::npos) {
+      Utils::save_to_cache(url_hash, (u_char*)header.c_str(), header.length());
+      Utils::save_to_cache(url_hash, buffer, content_length);
+    }
   }
 }
+
 u_short NetUtils::create_remote_socket(std::string remote_ip, u_short port)
 {
   u_short sockfd;

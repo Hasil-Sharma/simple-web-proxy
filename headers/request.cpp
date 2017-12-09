@@ -48,8 +48,9 @@ int NetUtils::RqRsHandler::readRqFromClient()
 
   // Extracting parameters from the HTTP request
   std::vector<std::string> rq_delim = Utils::split_string_to_vector(request, httpconstant::fields::delim);
-  request += httpconstant::fields::delim + httpconstant::fields::connection + ": " + httpconstant::fields ::connection_close_value;
-  this->request = request + httprequest::request_end;
+  request += httprequest::request_end;
+  NetUtils::add_close_to_headers(request);
+  this->request = request;
   int host_idx = Utils::find_string_index(rq_delim, httpconstant::fields::host);
   if (host_idx == -1) {
     return RqRsHandler::ERROR;
@@ -86,6 +87,7 @@ int NetUtils::RqRsHandler::sendRqToRemote()
    */
   bool in_cache = Utils::check_in_cache(this->url_hash);
   if (in_cache) {
+    debugs("Found in cache", this->url_hash);
     return RqRsHandler::RETURN_CACHE;
   }
   u_short remote_socket;
@@ -107,6 +109,7 @@ int NetUtils::RqRsHandler::sendRqToRemote()
   //debug("Start: Send Request to remote");
   // Sending the request received from the client
   // Sending Connection: close with request
+  debugs("Request to remote", request);
   if (NetUtils::send_to_socket(remote_socket, request_ptr, total_bytes, "Unable to send request to the remote server") != NetUtils::SUCCESS)
     return RqRsHandler::ERROR;
   //debug("End: Send Request to remote");
@@ -129,8 +132,8 @@ int NetUtils::RqRsHandler::sendRsToClient()
   debugs("Header from Remote", header);
 
   // Adding explicit close to client
-  header += httpconstant::fields::delim + httpconstant::fields::connection + ": " + httpconstant::fields ::connection_close_value;
   header += httprequest::request_end;
+  NetUtils::add_close_to_headers(header);
   content_length = this->getContentLengthFromHeader(header);
 
   if (content_length == NO_CONTENT_LENGTH) {
@@ -208,16 +211,18 @@ int NetUtils::RqRsHandler::sendRsToClient()
   header.erase(header.find(httprequest::request_end));
   header += httpconstant::fields::delim + httpconstant::fields::cache + ": true";
   header += httprequest::request_end;
-  Utils::save_to_cache(this->url_hash, (u_char*)header.c_str(), header.length());
-  Utils::save_to_cache(this->url_hash, buffer, content_length);
-  //debug("Saved the page fetched to cache");
 
-  //debug("Extracting hyperlink from content");
-  std::string string_buffer((char*)buffer);
-  std::set<std::string> hyperlinks = Utils::extract_hyperlinks(string_buffer);
-  std::thread(&NetUtils::spawn_prefetch_handler, this->host, this->hostIp, this->port, hyperlinks).detach();
-  for (std::string s : hyperlinks) {
-    debugs("Hyperlink Extracted", s);
+  if (header.find("200 OK") != std::string::npos) {
+    Utils::save_to_cache(this->url_hash, (u_char*)header.c_str(), header.length());
+    Utils::save_to_cache(this->url_hash, buffer, content_length);
+    //debug("Saved the page fetched to cache");
+    //debug("Extracting hyperlink from content");
+    std::string string_buffer((char*)buffer);
+    std::set<std::string> hyperlinks = Utils::extract_hyperlinks(string_buffer);
+    std::thread(&NetUtils::spawn_prefetch_handler, this->host, this->hostIp, this->port, hyperlinks).detach();
+    for (std::string s : hyperlinks) {
+      debugs("Hyperlink Extracted", s);
+    }
   }
   free(buffer);
   return RqRsHandler::SUCCESS;
@@ -274,19 +279,6 @@ int NetUtils::RqRsHandler::sendCacheToClient()
   std::vector<u_char> body;
   Utils::read_from_cache(this->url_hash, body);
   int response_status;
-  //header << ((this->http.compare(httpconstant::http_11) == 0) ? httpresponse::header::http_11_ok_200 : httpresponse::header::http_10_ok_200);
-  //header << httpconstant::fields::delim;
-  //header << httpconstant::fields::content_length << ": " << body.size() << httpconstant::fields::delim;
-  //header << httpconstant::fields::content_type << ": " << httpresponse::cache_content_type << httpconstant::fields::delim;
-  //header << httpconstant::fields::cache << ": true" << httpconstant::fields::delim;
-  //header << httpconstant::fields::delim;
-
-  //std::string header_str = header.str();
-  //int response_status = NetUtils::send_to_socket(this->client_socket, (void*)header_str.c_str(), header_str.length(), "Unable to send header from cache");
-  //// TODO: Case when client is closed
-  //if (response_status != NetUtils::SUCCESS)
-  //return RqRsHandler::ERROR;
-
   response_status = NetUtils::send_to_socket(this->client_socket, (void*)&body[0], body.size(), "Unable to send body from cache");
 
   return (response_status == NetUtils::SUCCESS) ? RqRsHandler::SUCCESS : RqRsHandler::ERROR;
