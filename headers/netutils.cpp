@@ -104,9 +104,6 @@ void NetUtils::spawn_request_handler(u_short client_socket)
   // One thread per request
   int status;
   NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
-  //while (true) {
-  //std::thread::id this_id = std::this_thread::get_id();
-  //std::cout << "DEBUG: Thread ID:" << std::hex << this_id << std::endl;
 
   debug("Start: Read Request from client");
   status = rq.readRqFromClient();
@@ -173,7 +170,7 @@ void NetUtils::spawn_prefetch_handler(std::string remote_host, std::string remot
   for (auto& hyperlink : hyperlinks) {
     // To avoid reading further in case of no content-length supplied
     // TODO: Do not save error pages
-    debugs("Extracted Link", hyperlink);
+    debugs("Prefetching Link", hyperlink);
     u_short socket = NetUtils::create_remote_socket(remote_ip, port);
     u_char* buffer;
     std::stringstream request;

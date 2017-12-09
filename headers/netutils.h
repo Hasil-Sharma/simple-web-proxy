@@ -9,6 +9,7 @@
 #include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <sys/socket.h>

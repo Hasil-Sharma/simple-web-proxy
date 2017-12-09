@@ -45,11 +45,17 @@ int Utils::find_string_index(std::vector<std::string>& strings, const std::strin
 
 std::set<std::string> Utils::extract_hyperlinks(std::string& html)
 {
+  debug("Extracting HTML links");
   static const std::regex hl_regex("<a href=\"(.*?html)\">", std::regex_constants::icase);
-  return {
+  std::set<std::string> html_set = {
     std::sregex_token_iterator(html.begin(), html.end(), hl_regex, 1),
     std::sregex_token_iterator{}
   };
+
+  for (auto str : html_set) {
+    debugs("Extracted Links", str);
+  }
+  return html_set;
 }
 std::string Utils::generate_dynamic_string(const char** string_templates, int num)
 {
