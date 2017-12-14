@@ -2,6 +2,7 @@
 
 namespace NetUtils {
 std::mutex netUtilsMutex;
+std::mutex rqRsMutex;
 std::unordered_map<std::string, std::string> dns_cache;
 std::set<std::string> blocked_ip;
 std::set<std::string> blocked_host;
@@ -103,6 +104,8 @@ void NetUtils::spawn_request_handler(u_short client_socket)
 {
   // One thread per request
   int status;
+
+  //std::lock_guard<std::mutex> guard(NetUtils::rqRsMutex);
   NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
 
   debug("Start: Read Request from client");
@@ -110,19 +113,24 @@ void NetUtils::spawn_request_handler(u_short client_socket)
   debug("End: Read Request from client");
 
   if (status == NetUtils::RqRsHandler::CONNECTION_CLOSED) {
-    debug("Connection Closed");
+    debug("Connection Closed : Closing Client Connection");
     //break;
+    close(client_socket);
     return;
   } else if (status == RqRsHandler::ERROR) {
     // TODO: handle
     //break;
+    debug("Error in Connection : Closing Client Connection");
+
+    close(client_socket);
     return;
   } else if (status == RqRsHandler::HOST_BLOCKED || status == RqRsHandler::IP_BLOCKED || status == RqRsHandler::UNKNOWN_REQUEST || status == RqRsHandler::NO_HOST_RESOLVE) {
 
     // TODO: Handle;
-    debug("Requested Remote is Blocked");
+    debug("Requested Remote is Blocked : Closing Client Connection");
     rq.handleError(status);
     //break;
+    close(client_socket);
     return;
   }
 
@@ -133,17 +141,23 @@ void NetUtils::spawn_request_handler(u_short client_socket)
   if (status == RqRsHandler::ERROR) {
     // TODO Handle;
     //break;
+    close(client_socket);
     return;
   } else if (status == RqRsHandler::RETURN_CACHE) {
     debug("Sending cached page to client");
     status = rq.sendCacheToClient();
     if (status == RqRsHandler::ERROR) {
-      debug("Error in sending cache");
+      debug("Error in sending cache : Closing Client Connection");
+
+      close(client_socket);
+
       return;
       //break;
       // TODO: Handle better
     }
     debug("Sent cached page to client");
+
+    close(client_socket);
     return;
     //continue;
   }
@@ -153,13 +167,17 @@ void NetUtils::spawn_request_handler(u_short client_socket)
   debug("End: Send Response to Client");
 
   if (status == RqRsHandler::ERROR) {
-    debug("Error in sending response to client");
+    debug("Error in sending response to client : Closing Client Connection");
+
+    close(client_socket);
     return;
     //break;
     // TODO Handle better
   } else if (status == RqRsHandler::NO_CONTENT_LENGTH) {
-    debug("No Content-Length Supplied in response");
+    debug("No Content-Length Supplied in response : Closing Client Connection");
     rq.handleError(status);
+
+    close(client_socket);
     return;
     //break;
   }
@@ -293,6 +311,7 @@ int NetUtils::recv_from_socket(u_short port, void* buffer, ssize_t buffer_length
     }
     if (t_bytes == 0) {
       // Connection closed by remote
+      debugs(error_msg, "Connection Closed");
       return NetUtils::CONNECTION_CLOSED;
     }
     r_bytes += t_bytes;
@@ -310,10 +329,13 @@ void NetUtils::recv_headers(u_short socket, std::string& header, std::vector<u_c
   while (true) {
     if ((r_bytes = recv(socket, recvbuff, DEFAULT_BUFFLEN, 0)) < 0) {
       Utils::print_error_with_message("Unable to receive headers from socket");
+      debugs("Partial Read header Socket Error", header);
+      break;
     }
 
     if (r_bytes == 0) {
       debug("Connection closed while reading headers");
+      debugs("Partial Read header Connection Closed", header);
       break;
     }
     // Searching for HTTP Request End Sequence in the recvbuff
@@ -334,4 +356,7 @@ void NetUtils::recv_headers(u_short socket, std::string& header, std::vector<u_c
 
     r_bytes = 0;
   }
+
+  debugs("header", header);
+  debugs("partial body size", body.size());
 }

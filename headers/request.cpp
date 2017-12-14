@@ -41,7 +41,7 @@ int NetUtils::RqRsHandler::readRqFromClient()
   // Headers received doesn't have the request end
   NetUtils::recv_headers(this->client_socket, request, body);
   //debug("End: Read request from client socket");
-  if (connection_closed == true) {
+  if (connection_closed == true || request.length() == 0) {
     return RqRsHandler::CONNECTION_CLOSED;
   }
 
@@ -104,6 +104,7 @@ int NetUtils::RqRsHandler::sendRqToRemote()
   // Update: new socket created everytime as connection is closed each time
   // TODO: Handle the case when remote closes the connection and new remote_socket is needed
   //if (this->remote_socket == 0)
+
   this->remote_socket = NetUtils::create_remote_socket(this->hostIp, this->port);
   remote_socket = this->remote_socket;
 
@@ -112,18 +113,19 @@ int NetUtils::RqRsHandler::sendRqToRemote()
 
     return RqRsHandler::ERROR;
   }
-  //debug("Start: Send Request to remote");
+  debug("Start: Send Request to remote");
   // Sending the request received from the client
   // Sending Connection: close with request
   debugs("Request to remote", request);
   if (NetUtils::send_to_socket(remote_socket, request_ptr, total_bytes, "Unable to send request to the remote server") != NetUtils::SUCCESS)
     return RqRsHandler::ERROR;
-  //debug("End: Send Request to remote");
+  debug("End: Send Request to remote");
   return RqRsHandler::SUCCESS;
 }
 
 int NetUtils::RqRsHandler::sendRsToClient()
 {
+  int status;
   ssize_t content_length;
   u_short remote_socket = this->remote_socket, client_socket = this->client_socket;
   u_char* buffer;
@@ -155,18 +157,23 @@ int NetUtils::RqRsHandler::sendRsToClient()
 
     while (true) {
       memset(buffer, 0, NetUtils::DEFAULT_BUFFLEN * sizeof(u_char));
-      int status = NetUtils::recv_from_socket(remote_socket, (void*)buffer, NetUtils::DEFAULT_BUFFLEN, "Unable to receive content from remote: chunked");
+      status = NetUtils::recv_from_socket(remote_socket, (void*)buffer, NetUtils::DEFAULT_BUFFLEN, "Unable to receive content from remote: chunked");
 
+      if (status == NetUtils::ERROR) {
+        break;
+      }
       for (int i = 0; i < NetUtils::DEFAULT_BUFFLEN; i++) {
         if (buffer[i] == 0)
           break;
         buffer_vector.push_back(buffer[i]);
       }
-      if (status == NetUtils::CONNECTION_CLOSED) {
+
+      if (status == NetUtils::CONNECTION_CLOSED)
         break;
-      }
     }
     free(buffer);
+    if (status == NetUtils::ERROR || buffer_vector.size() == 0)
+      return RqRsHandler::ERROR;
     content_length = buffer_vector.size();
     buffer = (u_char*)malloc(content_length * sizeof(u_char));
     memset(buffer, 0, content_length * sizeof(u_char));

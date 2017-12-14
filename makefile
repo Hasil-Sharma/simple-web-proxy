@@ -3,9 +3,9 @@ CC = g++
 INCLUDE = /usr/lib
 LIBS =-pthread -lcrypto -lssl
 OBJS =
-CFLAGS =-std=c++0x -g -Wall 
+CFLAGS =-std=c++0x -g -Wall -pedantic
 PORT = 8001
-TIMEOUT = 3600
+TIMEOUT = 10
 all: clean proxy run
 valgrind: clean proxy memory-leak
 proxy:

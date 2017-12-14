@@ -25,6 +25,7 @@ namespace NetUtils {
 extern std::set<std::string> blocked_ip;
 extern std::set<std::string> blocked_host;
 extern std::mutex netUtilsMutex;
+extern std::mutex rqRsMutex;
 extern std::unordered_map<std::string, std::string> dns_cache;
 
 extern int MAX_CONNECTION;

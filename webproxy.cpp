@@ -23,11 +23,12 @@ int main(int argc, char** argv)
   Utils::set_cache_timeout(timeout);
   signal(SIGPIPE, SIG_IGN);
   while (true) {
-    //debug("Waiting to accept connection");
+    debug("Waiting to accept connection");
     if ((conn_fd = accept(listen_fd, (struct sockaddr*)&remote_addr, &addr_size)) < 0) {
       Utils::print_error_with_message("Error Accepting Connection");
     }
-    //debug("Accepted Connection");
+    debugs("Accepted Connection", conn_fd);
+    //NetUtils::spawn_request_handler(conn_fd);
     std::thread t(&NetUtils::spawn_request_handler, conn_fd);
     t.detach();
   }
