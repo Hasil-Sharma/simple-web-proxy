@@ -105,7 +105,7 @@ void NetUtils::spawn_request_handler(u_short client_socket)
   // One thread per request
   int status;
 
-  //std::lock_guard<std::mutex> guard(NetUtils::rqRsMutex);
+  std::lock_guard<std::mutex> guard(NetUtils::rqRsMutex);
   NetUtils::RqRsHandler rq = NetUtils::RqRsHandler(client_socket);
 
   debug("Start: Read Request from client");
